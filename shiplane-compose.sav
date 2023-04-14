@@ -1,0 +1,89 @@
+version: '3.2'
+
+services:
+  base: &base
+    build:
+      context: .
+      args:
+        - APP_NAME=${APP_NAME}
+        - RAILS_MASTER_KEY=${RAILS_MASTER_KEY}
+        - RAILS_ENV=${RAILS_ENV}
+    tty: true
+    stdin_open: true
+    env_file: .env
+    depends_on:
+      - database
+      - memcached
+    volumes:
+      - ./:/var/www/${APP_NAME}
+      - shiplane-gem_cache:/usr/local/bundle
+
+  # web process
+  web:
+    <<: *base
+    container_name: '${APP_NAME}-web'
+    command: dockerize -wait http://bundler:23480 -timeout ${DEPENDENCY_TIMEOUT} -stderr /dev/null bin/start_development_web_server
+    ports:
+      - '${HOST_PORT}:3000'
+
+  # workers process
+  delayed_job:
+    <<: *base
+    container_name: '${APP_NAME}-delayed_job'
+    command: dockerize -wait http://bundler:23480 -timeout ${DEPENDENCY_TIMEOUT} -stderr /dev/null bin/start_workers
+    depends_on:
+      - database
+
+  # cron container
+  crontab:
+    <<: *base
+    container_name: '${APP_NAME}-crontab'
+    command: dockerize -wait http://bundler:23480 -timeout ${DEPENDENCY_TIMEOUT} -stderr /dev/null bin/start_cron
+    depends_on:
+      - database
+
+  # memcached
+  memcached:
+    container_name: '${APP_NAME}-memcached'
+    image: 'memcached'
+    ports:
+      - "${HOST_MEMCACHED_PORT}:11211"
+
+  # mailcatcher
+  mailcatcher:
+    container_name: '${APP_NAME}-mailcatcher'
+    restart: on-failure:10
+    image: dockage/mailcatcher:0.7.1
+    ports:
+      - "${HOST_MAILCATCHER_PORT_1}:1080"
+      - "${HOST_MAILCATCHER_PORT_2}:1025"
+
+  # database
+  database:
+    container_name: '${APP_NAME}-database'
+    image: postgres:13.6
+    shm_size: '256mb'
+    env_file: .env
+    #environment:
+    #- POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+    #- POSTGRES_USER=${DATABASE_USERNAME}
+    ports:
+      - "${HOST_POSTGRES_PORT}:5432"
+    volumes:
+      - shiplane-db_data:/var/lib/postgresql12/data
+      - shiplane-db_config:/etc/postgresql
+      - shiplane-db_log:/var/log/postgresql
+      - ./:/var/www/${APP_NAME}
+
+  # Handles bundling prior to any dependent containers starting
+  bundler:
+    <<: *base
+    container_name: '${APP_NAME}-bundler'
+    command: bin/update_bundle
+
+# persists the data in case you destroy your container
+volumes:
+  shiplane-db_data:
+  shiplane-db_config:
+  shiplane-db_log:
+  shiplane-gem_cache:

@@ -22,3 +22,4 @@ Things you may want to cover:
 * Deployment instructions
 
 * ...
+This is basic tiny Ruby on Rails app.  The main purpose is to have a dockerized Rails application, on Rails 6.1, that uses the Sorcery gem for authentication.
